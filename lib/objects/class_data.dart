@@ -78,6 +78,20 @@ class StudentClassDB {
     }
   }
 
+  Future<int> getLastAssignmentInsert() async {
+    final Database db = await initClassesDb();
+    var res =
+        await db.query(assignmentTable, orderBy: "$columnAssignmentId DESC");
+    print(res);
+    List<Assignment> assignmentMap =
+        res.map((e) => Assignment.fromMap(e)).toList();
+    if (assignmentMap.isEmpty) {
+      return 0;
+    } else {
+      return assignmentMap[0].id;
+    }
+  }
+
   // A method that retrieves all the dogs from the dogs table.
   Future<List<StudentClass>> getClasses() async {
     final Database db = await initClassesDb();
@@ -85,10 +99,10 @@ class StudentClassDB {
     // NEED TO IMPLEMENT ASSIGNMENT DB INTO HERE
     return List.generate(maps.length, (i) {
       return StudentClass(
-        id: maps[i][columnClassId],
-        className: maps[i][columnClassName],
-        description: maps[i][columnClassDescription],
-      );
+          id: maps[i][columnClassId],
+          className: maps[i][columnClassName],
+          description: maps[i][columnClassDescription],
+          assignmentMap: {});
     });
   }
 
@@ -101,7 +115,7 @@ class StudentClassDB {
           classId: maps[i][columnClassAssignmentId],
           assignmentTitle: maps[i][columnAssignmentName],
           assignmentType: maps[i][columnAssignmentType],
-          dueDate: maps[i][columnDueDate]);
+          dueDate: DateTime.parse(maps[i][columnDueDate]));
     });
   }
 
@@ -111,9 +125,21 @@ class StudentClassDB {
       classTable,
       studentClass.toMap(),
       // Ensure that the Dog has a matching id.
-      where: 'id = ?',
+      where: '$columnClassId == ?',
       // Pass the Dog's id as a whereArg to prevent SQL injection.
       whereArgs: [studentClass.id],
+    );
+  }
+
+  Future<void> updateAssignment(Assignment assignment) async {
+    final Database db = await initClassesDb();
+    await db.update(
+      assignmentTable,
+      assignment.toMap(),
+      // Ensure that the Dog has a matching id.
+      where: '$columnAssignmentId = ?',
+      // Pass the Dog's id as a whereArg to prevent SQL injection.
+      whereArgs: [assignment.id],
     );
   }
 
@@ -121,10 +147,19 @@ class StudentClassDB {
     final Database db = await initClassesDb();
     await db.delete(
       classTable,
-      // Use a `where` clause to delete a specific dog.
-      where: 'id = ?',
-      // Pass the Dog's id as a whereArg to prevent SQL injection.
+      where: '$columnClassId == ?',
+      // Pass the id as a whereArg to prevent SQL injection.
       whereArgs: [id],
+    );
+  }
+
+  Future<void> deleteAssignment(int classId, int id) async {
+    final Database db = await initClassesDb();
+    await db.delete(
+      assignmentTable,
+      where: "$columnClassAssignmentId == ? AND $columnAssignmentId == ?",
+      // Pass the id as a whereArg to prevent SQL injection.
+      whereArgs: [classId, id],
     );
   }
 }

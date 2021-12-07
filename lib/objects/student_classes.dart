@@ -2,19 +2,21 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:myapp/main.dart';
+import 'package:myapp/objects/application_state.dart';
 import 'package:myapp/widgets/date_picker_widget.dart';
+import 'package:provider/provider.dart';
 
 class StudentClass {
   StudentClass(
       {Key? key,
       required this.className,
       required this.description,
-      this.assignmentList,
+      this.assignmentMap,
       required this.id});
 
   String className;
   String description;
-  List<Assignment>? assignmentList;
+  Map<int, Assignment>? assignmentMap;
   int id;
 
   Map<String, dynamic> toMap() {
@@ -47,20 +49,20 @@ class Assignment {
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
-      'classId': classId,
+      'assignmentId': id,
+      'classAssignmentId': classId,
       'assignmentName': assignmentTitle,
       'assignmentType': assignmentType,
-      'dueDate': dueDate
+      'dueDate': dueDate.toString()
     };
   }
 
   Assignment.fromMap(Map<String, dynamic> res)
-      : classId = res["classId"],
+      : id = res["assignmentId"],
+        classId = res["classAssignmentId"],
         assignmentTitle = res["assignmentName"],
         assignmentType = res["assignmentType"],
-        dueDate = res["dueDate"],
-        id = res["id"];
+        dueDate = DateTime.parse(res["dueDate"]);
 }
 
 class ClassPage extends StatefulWidget {
@@ -89,36 +91,41 @@ class ClassPageState extends State<ClassPage> {
         ),
         title: Text(
           studentClass.className,
-          overflow: TextOverflow.ellipsis,
+          overflow: TextOverflow.fade,
         ),
         backgroundColor: Colors.indigo,
       ),
       body: Column(
         children: [
           Expanded(
-              child: ListView.builder(
-                  itemCount: assignmentListLength(studentClass.assignmentList),
-                  itemBuilder: (context, index) {
-                    return Card(
-                      child: ListTile(
-                        onTap: () => _assignmentOptionsDialog(index),
-                        tileColor:
-                            dueDateColor(studentClass.assignmentList![index]),
-                        title: (Text(
-                          studentClass.assignmentList![index].assignmentTitle,
-                          overflow: TextOverflow.ellipsis,
-                        )),
-                        subtitle: Text(
-                          studentClass.assignmentList![index].dueDate
-                              .toString()
-                              .substring(0, 16),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        leading: assignmentTypeIcon(
-                            studentClass.assignmentList![index]),
-                      ),
-                    );
-                  })),
+              child: Consumer<ApplicationState>(
+                  builder: (context, appState, _) => ListView.builder(
+                      itemCount:
+                          assignmentListLength(studentClass.assignmentMap),
+                      itemBuilder: (context, index) {
+                        int key =
+                            studentClass.assignmentMap!.keys.elementAt(index);
+                        return Card(
+                          child: ListTile(
+                            onTap: () => _assignmentOptionsDialog(
+                                studentClass.assignmentMap![key]!),
+                            tileColor:
+                                dueDateColor(studentClass.assignmentMap![key]!),
+                            title: (Text(
+                              studentClass.assignmentMap![key]!.assignmentTitle,
+                              overflow: TextOverflow.fade,
+                            )),
+                            subtitle: Text(
+                              studentClass.assignmentMap![key]!.dueDate
+                                  .toString()
+                                  .substring(0, 16),
+                              overflow: TextOverflow.fade,
+                            ),
+                            leading: assignmentTypeIcon(
+                                studentClass.assignmentMap![key]!),
+                          ),
+                        );
+                      }))),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -130,7 +137,7 @@ class ClassPageState extends State<ClassPage> {
     ));
   }
 
-  int assignmentListLength(List<Assignment>? assignments) {
+  int assignmentListLength(Map<int, Assignment>? assignments) {
     if (assignments == null) {
       return 0;
     } else {
@@ -143,6 +150,9 @@ class ClassPageState extends State<ClassPage> {
 
 // add an assignment to the assignment list
   Future<void> _assignmentCreatorDialog() async {
+    if (assignmentDate != null) {
+      assignmentDate = null;
+    }
     final studentClass =
         ModalRoute.of(context)!.settings.arguments as StudentClass;
     return showDialog<void>(
@@ -208,18 +218,31 @@ class ClassPageState extends State<ClassPage> {
             );
           }),
           actions: <Widget>[
-            TextButton(
-              child: const Text('Create'),
-              onPressed: () {
-                setState(() {
-                  if (assignmentDate != null) {
-                    addAssignment(studentClass);
-                    assignmentNameText.clear();
-                    Navigator.of(context).pop();
-                  }
-                });
-              },
-            ),
+            Consumer<ApplicationState>(
+                builder: (context, appState, _) => TextButton(
+                      child: const Text('Create'),
+                      onPressed: () async {
+                        Assignment newAssignment =
+                            await appState.createAssignment(
+                                studentClass,
+                                assignmentNameText.text,
+                                assignmentDate,
+                                dropDownVal);
+                        setState(() {
+                          if (assignmentDate != null) {
+                            studentClass.assignmentMap![newAssignment.id] =
+                                newAssignment;
+                            appState.addClass(studentClass.id, newAssignment);
+                            assignmentNameText.clear();
+                            Navigator.of(context).pop();
+                          }
+                        });
+                        if (assignmentDate != null) {
+                          await appState.classHandler.insertAssignment(
+                              studentClass.assignmentMap![newAssignment.id]!);
+                        }
+                      },
+                    )),
             TextButton(
               child: const Text('Cancel'),
               onPressed: () {
@@ -287,21 +310,26 @@ class ClassPageState extends State<ClassPage> {
                             });
                           },
                           child: const Text("Select Due Date"))),
-                  Text(assignmentDate.toString().substring(0, 16))
+                  Text(assignment.dueDate.toString().substring(0, 16))
                 ],
               ),
             );
           }),
           actions: <Widget>[
-            TextButton(
-              child: const Text('Apply'),
-              onPressed: () {
-                setState(() {
-                  editAssignment(assignment);
-                });
-                Navigator.of(context).pop();
-              },
-            ),
+            Consumer<ApplicationState>(
+                builder: (context, appState, _) => TextButton(
+                      child: const Text('Apply'),
+                      onPressed: () async {
+                        setState(() {
+                          editAssignment(assignment);
+                          appState.assignmentMap[assignment.classId]![
+                              assignment.id] = assignment;
+                        });
+                        await appState.classHandler
+                            .updateAssignment(assignment);
+                        Navigator.of(context).pop();
+                      },
+                    )),
             TextButton(
               child: const Text('Cancel'),
               onPressed: () {
@@ -314,10 +342,10 @@ class ClassPageState extends State<ClassPage> {
     );
   }
 
-  void _assignmentOptionsDialog(int index) async {
+  void _assignmentOptionsDialog(Assignment assignment) async {
     final studentClass =
         ModalRoute.of(context)!.settings.arguments as StudentClass;
-    String assignmentName = studentClass.assignmentList![index].assignmentTitle;
+    String assignmentName = assignment.assignmentTitle;
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
@@ -335,8 +363,7 @@ class ClassPageState extends State<ClassPage> {
                                 MaterialStateProperty.all(Colors.indigo)),
                         onPressed: () {
                           Navigator.of(context).pop();
-                          _editAssignmentDialog(
-                              studentClass.assignmentList![index]);
+                          _editAssignmentDialog(assignment);
                         },
                         child: const Text("Edit")),
                   ),
@@ -344,17 +371,21 @@ class ClassPageState extends State<ClassPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 10, right: 10),
-                    child: ElevatedButton(
-                        style: ButtonStyle(
-                            backgroundColor:
-                                MaterialStateProperty.all(Colors.red)),
-                        onPressed: () {
-                          setState(() {
-                            removeAssignment(studentClass, index);
-                          });
-                          Navigator.of(context).pop();
-                        },
-                        child: const Text("Delete")),
+                    child: Consumer<ApplicationState>(
+                        builder: (context, appState, _) => ElevatedButton(
+                            style: ButtonStyle(
+                                backgroundColor:
+                                    MaterialStateProperty.all(Colors.red)),
+                            onPressed: () {
+                              setState(() {
+                                appState.removeAssignment(
+                                    studentClass.id, assignment.id);
+                                studentClass.assignmentMap!
+                                    .remove(assignment.id);
+                              });
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text("Delete"))),
                   ),
                 ),
                 Expanded(
@@ -384,21 +415,6 @@ class ClassPageState extends State<ClassPage> {
     return date;
   }
 
-  void addAssignment(StudentClass studentClass) {
-    String assignmentName = "";
-    if (assignmentNameText.text.toString() == "") {
-      assignmentName = "Untitled Assignment";
-    } else {
-      assignmentName = assignmentNameText.text.toString();
-    }
-    studentClass.assignmentList!.add(Assignment(
-        assignmentTitle: assignmentName,
-        dueDate: assignmentDate,
-        assignmentType: dropDownVal,
-        classId: studentClass.id,
-        id: studentClass.assignmentList!.length));
-  }
-
   void editAssignment(Assignment assignment) {
     if (assignmentNameText.text.toString() == "") {
       assignment.assignmentTitle = "Untitled Assignment";
@@ -407,10 +423,6 @@ class ClassPageState extends State<ClassPage> {
     }
     assignment.dueDate = assignmentDate;
     assignment.assignmentType = dropDownVal;
-  }
-
-  void removeAssignment(StudentClass studentClass, int index) {
-    studentClass.assignmentList!.removeAt(index);
   }
 
   // used to set icon depending on the type of assignment for the assignment's ListTile
@@ -433,9 +445,9 @@ class ClassPageState extends State<ClassPage> {
   MaterialColor dueDateColor(Assignment assignment) {
     if (assignment.dueDate == null) {
       return Colors.grey;
-    } else if (daysBetween(DateTime.now(), assignment.dueDate!) < 2) {
+    } else if (daysBetween(DateTime.now(), assignment.dueDate!) < 4) {
       return Colors.red;
-    } else if (daysBetween(DateTime.now(), assignment.dueDate!) < 5) {
+    } else if (daysBetween(DateTime.now(), assignment.dueDate!) < 7) {
       return Colors.orange;
     } else {
       return Colors.green;

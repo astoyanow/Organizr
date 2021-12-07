@@ -27,18 +27,19 @@ class StudentPageState extends State<StudentPage> {
           Expanded(
               child: Consumer<ApplicationState>(
                   builder: (context, appState, _) => ListView.builder(
-                      itemCount: appState.classes.length,
+                      itemCount: appState.classMap.length,
                       itemBuilder: (context, index) {
+                        int key = appState.classMap.keys.elementAt(index);
                         return Card(
                           child: ListTile(
                               tileColor: Colors.grey[200],
                               title: Text(
-                                appState.classes[index].className,
-                                overflow: TextOverflow.ellipsis,
+                                appState.classMap[key]!.className,
+                                overflow: TextOverflow.fade,
                               ),
                               subtitle: Text(
-                                appState.classes[index].description,
-                                overflow: TextOverflow.ellipsis,
+                                appState.classMap[key]!.description,
+                                overflow: TextOverflow.fade,
                               ),
                               trailing:
                                   const Icon(Icons.arrow_drop_down_rounded),
@@ -47,9 +48,9 @@ class StudentPageState extends State<StudentPage> {
                                   MaterialPageRoute(
                                       builder: (context) => ClassPage(),
                                       settings: RouteSettings(
-                                          arguments: appState.classes[index]))),
+                                          arguments: appState.classMap[key]))),
                               onLongPress: () =>
-                                  _deleteClassDialog(appState.classes, index)),
+                                  _classOptionsDialog(appState.classMap, key)),
                         );
                       }))),
         ],
@@ -100,15 +101,15 @@ class StudentPageState extends State<StudentPage> {
                     TextButton(
                       child: const Text('Create'),
                       onPressed: () async {
-                        StudentClass newClass = await appState.addClass(
-                            classNameText.text, classDescriptionText.text, []);
+                        StudentClass newClass = await appState.createClass(
+                            classNameText.text, classDescriptionText.text, {});
                         setState(() {
-                          appState.classes.add(newClass);
+                          appState.classMap[newClass.id] = newClass;
                           classNameText.clear();
                           classDescriptionText.clear();
                         });
-                        await appState.classHandler.insertClass(
-                            appState.classes[appState.classes.length - 1]);
+                        await appState.classHandler
+                            .insertClass(appState.classMap[newClass.id]!);
                         Navigator.of(context).pop();
                       },
                     ),
@@ -124,13 +125,13 @@ class StudentPageState extends State<StudentPage> {
     );
   }
 
-  void _deleteClassDialog(List<StudentClass> classList, int index) async {
-    String className = classList[index].className;
+  void _classOptionsDialog(Map<int, StudentClass> classMap, int id) async {
+    String className = classMap[id]!.className;
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
         return SimpleDialog(
-          title: Text('Would you like to delete $className?'),
+          title: Text('What would you like to do with $className?'),
           children: [
             Row(
               children: [
@@ -144,11 +145,26 @@ class StudentPageState extends State<StudentPage> {
                                     MaterialStateProperty.all(Colors.red)),
                             onPressed: () {
                               setState(() {
-                                appState.classes.removeAt(index);
+                                appState.removeClass(id);
                               });
                               Navigator.of(context).pop();
                             },
                             child: const Text("Delete")),
+                      )),
+                ),
+                Expanded(
+                  child: Padding(
+                      padding: const EdgeInsets.only(left: 10, right: 10),
+                      child: Consumer<ApplicationState>(
+                        builder: (context, appState, _) => ElevatedButton(
+                            style: ButtonStyle(
+                                backgroundColor:
+                                    MaterialStateProperty.all(Colors.indigo)),
+                            onPressed: () async {
+                              await _editClassDialog(classMap[id]!);
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text("Edit")),
                       )),
                 ),
                 Expanded(
@@ -170,5 +186,74 @@ class StudentPageState extends State<StudentPage> {
         );
       },
     );
+  }
+
+  Future<void> _editClassDialog(StudentClass studentClass) async {
+    String className = studentClass.className;
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return Consumer<ApplicationState>(
+            builder: (context, appState, _) => AlertDialog(
+                  title: Text('Edit $className', overflow: TextOverflow.fade),
+                  content: SingleChildScrollView(
+                    child: ListBody(
+                      children: <Widget>[
+                        const Padding(
+                            padding: EdgeInsets.only(bottom: 5),
+                            child: Text('Class name')),
+                        TextField(
+                          decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  vertical: 5, horizontal: 5)),
+                          controller: classNameText,
+                        ),
+                        const Padding(
+                            padding: EdgeInsets.only(top: 15, bottom: 5),
+                            child: Text('Class description')),
+                        TextField(
+                          decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  vertical: 5, horizontal: 5)),
+                          controller: classDescriptionText,
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      child: const Text('Apply'),
+                      onPressed: () async {
+                        setState(() {
+                          editClass(studentClass);
+                          appState.classMap[studentClass.id] = studentClass;
+                          classNameText.clear();
+                          classDescriptionText.clear();
+                        });
+                        await appState.classHandler.updateClass(studentClass);
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    TextButton(
+                      child: const Text('Cancel'),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                    )
+                  ],
+                ));
+      },
+    );
+  }
+
+  void editClass(StudentClass studentClass) {
+    if (classNameText.text == "") {
+      studentClass.className = "Untitled Class";
+    } else {
+      studentClass.className = classNameText.text.toString();
+    }
+    studentClass.description = classDescriptionText.text.toString();
   }
 }
